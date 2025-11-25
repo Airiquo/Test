@@ -1,0 +1,867 @@
+package com.mycompany.test;
+
+import javax.swing.*;
+import javax.swing.table.DefaultTableModel;
+import javax.swing.table.JTableHeader;
+import java.awt.*;
+import java.awt.event.*;
+import java.sql.*;
+import java.time.LocalDate;
+import java.time.format.DateTimeParseException;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Comparator;
+
+public class Test {
+    public static void main(String[] args) {
+        SwingUtilities.invokeLater(LoginFrame::new);
+    }
+}
+
+// --- DATA CLASSES ---
+class User {
+    String username, password, role, fullName, position;
+
+    public User(String username, String password, String role, String fullName, String position) {
+        this.username = username;
+        this.password = password;
+        this.role = role;
+        this.fullName = fullName;
+        this.position = position;
+    }
+}
+
+class Staff {
+    int memberID;
+    String lastName, firstName, middleName, birthdate, course, year, role, department, status, contactInfo;
+
+    public Staff(int memberID, String lastName, String firstName, String middleName, String birthdate, String course,
+                 String year, String role, String department, String status, String contactInfo) {
+        this.memberID = memberID;
+        this.lastName = lastName;
+        this.firstName = firstName;
+        this.middleName = middleName;
+        this.birthdate = birthdate;
+        this.course = course;
+        this.year = year;
+        this.role = role;
+        this.department = department;
+        this.status = status;
+        this.contactInfo = contactInfo;
+    }
+
+    public String getFullName() {
+        return lastName + ", " + firstName + " " + middleName;
+    }
+}
+
+class Task {
+    int taskID;
+    String title, deadline, assignedTo, status, assignedDate, assignedBy, department, priority, description;
+    int assignedToID, assignedByID;
+
+    public Task(int taskID, String title, String deadline, String assignedTo, int assignedToID, String status, String assignedDate,
+                String assignedBy, int assignedByID, String department, String priority, String description) {
+        this.taskID = taskID;
+        this.title = title;
+        this.deadline = deadline;
+        this.assignedTo = assignedTo;
+        this.assignedToID = assignedToID;
+        this.status = status;
+        this.assignedDate = assignedDate;
+        this.assignedBy = assignedBy;
+        this.assignedByID = assignedByID;
+        this.department = department;
+        this.priority = priority;
+        this.description = description;
+    }
+}
+
+// --- DATABASE CONNECTION ---
+class Database {
+    private static final String URL = "jdbc:mysql://localhost:3306/FinalProjectDB?useSSL=false&serverTimezone=UTC";
+    private static final String USER = "jp";
+    private static final String PASS = "samara"; // replace with your DB password
+
+    public static Connection getConnection() throws SQLException {
+        return DriverManager.getConnection(URL, USER, PASS);
+    }
+}
+
+// --- LOGIN FRAME ---
+class LoginFrame extends JFrame {
+    private static final User admin = new User("admin", "admin123", "Admin", "Anthony Beruega", "Opinion Editor");
+    private static final User staffUser = new User("staff", "staff123", "Staff", "Darna Cruz", "Writer");
+
+    public LoginFrame() {
+        setTitle("Cursor Publication Login");
+        setSize(320, 180);
+        setDefaultCloseOperation(EXIT_ON_CLOSE);
+        setLocationRelativeTo(null);
+        setLayout(new BorderLayout(5, 5));
+
+        JLabel title = new JLabel("Login", SwingConstants.CENTER);
+        title.setFont(new Font("Arial", Font.BOLD, 22));
+        title.setForeground(new Color(255, 122, 0));
+
+        JTextField username = new JTextField(10);
+        JPasswordField password = new JPasswordField(10);
+
+        JButton loginBtn = new JButton("Login");
+        loginBtn.setBackground(new Color(255, 122, 0));
+        loginBtn.setForeground(Color.WHITE);
+
+        JPanel inputPanel = new JPanel(new GridLayout(2, 2, 5, 5));
+        inputPanel.add(new JLabel("Username:", SwingConstants.RIGHT));
+        inputPanel.add(username);
+        inputPanel.add(new JLabel("Password:", SwingConstants.RIGHT));
+        inputPanel.add(password);
+
+        JPanel buttonPanel = new JPanel();
+        buttonPanel.add(loginBtn);
+
+        add(title, BorderLayout.NORTH);
+        add(inputPanel, BorderLayout.CENTER);
+        add(buttonPanel, BorderLayout.SOUTH);
+
+        loginBtn.addActionListener(e -> {
+            String user = username.getText();
+            String pass = new String(password.getPassword());
+            if (user.equals(admin.username) && pass.equals(admin.password)) {
+                new MainFrame(admin);
+                dispose();
+            } else if (user.equals(staffUser.username) && pass.equals(staffUser.password)) {
+                new MainFrame(staffUser);
+                dispose();
+            } else {
+                JOptionPane.showMessageDialog(this, "Invalid credentials!");
+            }
+        });
+
+        getContentPane().setBackground(Color.WHITE);
+        setVisible(true);
+    }
+}
+
+// --- MAIN FRAME ---
+class MainFrame extends JFrame {
+    private User currentUser;
+    private DefaultTableModel staffModel;
+    private DefaultTableModel taskModel;
+    private List<Staff> staffList = new ArrayList<>();
+    private List<Task> taskList = new ArrayList<>();
+    private boolean[] staffColumnAscending;
+    private boolean[] taskColumnAscending;
+
+    public MainFrame(User user) {
+        this.currentUser = user;
+        setTitle("Cursor Publication - " + user.fullName + " (" + user.position + ")");
+        setSize(1200, 600);
+        setDefaultCloseOperation(EXIT_ON_CLOSE);
+        setLocationRelativeTo(null);
+        setLayout(new BorderLayout());
+
+        initializeStaffFromDB();
+        initializeTasksFromDB();
+
+        staffModel = new DefaultTableModel(new String[]{"Full Name", "Birthday", "Course", "Year", "Role", "Department", "Status"}, 0);
+        staffColumnAscending = new boolean[staffModel.getColumnCount()];
+        for (int i = 0; i < staffColumnAscending.length; i++) staffColumnAscending[i] = true;
+        
+        for (Staff s : staffList) {
+            staffModel.addRow(new Object[]{s.getFullName(), s.birthdate, s.course, s.year, s.role, s.department, s.status});
+        }
+
+        taskModel = new DefaultTableModel(new String[]{"Task", "Deadline", "Assigned To", "Status", "Assigned Date", "Assigned By", "Department", "Priority", "Description", "AssignedCompletion"}, 0);
+        taskColumnAscending = new boolean[taskModel.getColumnCount()];
+        for (int i = 0; i < taskColumnAscending.length; i++) taskColumnAscending[i] = true;
+        
+        for (Task t : taskList) {
+            taskModel.addRow(new Object[]{t.title, t.deadline, t.assignedTo, t.status, t.assignedDate, t.assignedBy, t.department, t.priority, t.description, t.status});
+        }
+
+        // --- TOP PANEL ---
+        JPanel topPanel = new JPanel(new FlowLayout(FlowLayout.CENTER, 20, 10));
+        topPanel.setBackground(Color.WHITE);
+        JButton btnStaff = new JButton("Staff");
+        JButton btnTask = new JButton("Task");
+        styleButton(btnStaff);
+        styleButton(btnTask);
+        topPanel.add(btnStaff);
+        topPanel.add(btnTask);
+
+        JLabel lblUser = new JLabel("Logged in as: " + user.fullName + " - " + user.position);
+        topPanel.add(lblUser);
+        JButton logoutBtn = new JButton("Logout");
+        styleButton(logoutBtn);
+        topPanel.add(logoutBtn);
+
+        // --- MAIN PANEL ---
+        JPanel mainPanel = new JPanel(new CardLayout());
+
+// --- STAFF PANEL ---
+JPanel staffPanel = new JPanel(new BorderLayout());
+staffPanel.setBorder(BorderFactory.createTitledBorder(BorderFactory.createLineBorder(new Color(255, 122, 0)), "STAFF"));
+JTable staffTable = new JTable(staffModel);
+addColumnSortingToTable(staffTable, staffList, staffModel, staffColumnAscending, true);
+staffPanel.add(new JScrollPane(staffTable), BorderLayout.CENTER);
+
+if (user.role.equals("Admin")) {
+    JPanel staffControls = new JPanel(new GridBagLayout());
+    staffControls.setBackground(Color.WHITE);
+    GridBagConstraints gbc = new GridBagConstraints();
+    gbc.insets = new Insets(5, 5, 5, 5);
+    gbc.anchor = GridBagConstraints.EAST;
+
+    JTextField lastNameField = new JTextField(10);
+    JTextField firstNameField = new JTextField(10);
+    JTextField middleField = new JTextField(10);
+    JTextField birthField = new JTextField(10);
+    JTextField contactInfoField = new JTextField(10);
+    JTextField courseField = new JTextField(10);
+    JTextField yearField = new JTextField(10);
+    JTextField roleField = new JTextField(10);
+    JComboBox<String> departmentBox = new JComboBox<>(new String[]{"Editorial Board", "Writing Department", "Photography Department"});
+    JButton addStaffBtn = new JButton("Add Staff");
+    styleButton(addStaffBtn);
+    JButton removeStaffBtn = new JButton("Remove Staff");
+    styleButton(removeStaffBtn);
+    JButton modifyStaffBtn = new JButton("Modify Staff");
+    styleButton(modifyStaffBtn);
+
+    // --- LABELS & FIELDS ---
+    String[] labels = {"Last Name:", "First Name:", "Middle Name:", "Birthday (YYYY-MM-DD):", "Contact Info:",
+            "Course:", "Year:", "Role:", "Department:"};
+    Component[] fields = {lastNameField, firstNameField, middleField, birthField, contactInfoField, courseField, yearField, roleField, departmentBox};
+
+    for (int i = 0; i < labels.length; i++) {
+        gbc.gridx = 0;
+        gbc.gridy = i;
+        gbc.anchor = GridBagConstraints.EAST;
+        staffControls.add(new JLabel(labels[i], SwingConstants.RIGHT), gbc);
+
+        gbc.gridx = 1;
+        gbc.anchor = GridBagConstraints.WEST;
+        staffControls.add(fields[i], gbc);
+    }
+
+    // --- BUTTONS ---
+    gbc.gridx = 0;
+    gbc.gridy = labels.length;
+    gbc.gridwidth = 2;
+    gbc.anchor = GridBagConstraints.CENTER;
+    JPanel btnPanel = new JPanel();
+    btnPanel.add(addStaffBtn);
+    btnPanel.add(removeStaffBtn);
+    btnPanel.add(modifyStaffBtn);
+    staffControls.add(btnPanel, gbc);
+
+    staffPanel.add(staffControls, BorderLayout.NORTH);
+
+    // --- STAFF TABLE CLICK TO POPULATE FIELDS ---
+    staffTable.addMouseListener(new MouseAdapter() {
+        public void mouseClicked(MouseEvent e) {
+            int row = staffTable.getSelectedRow();
+            if (row < 0) return;
+            Staff s = staffList.get(row);
+            lastNameField.setText(s.lastName);
+            firstNameField.setText(s.firstName);
+            middleField.setText(s.middleName);
+            birthField.setText(s.birthdate);
+            contactInfoField.setText(s.contactInfo);
+            courseField.setText(s.course);
+            yearField.setText(s.year);
+            roleField.setText(s.role);
+            departmentBox.setSelectedItem(s.department);
+        }
+    });
+
+            addStaffBtn.addActionListener(e -> {
+                try {
+                    String last = lastNameField.getText().trim(),
+                            first = firstNameField.getText().trim(),
+                            middle = middleField.getText().trim(),
+                            birth = birthField.getText().trim(),
+                            contact = contactInfoField.getText().trim(),
+                            course = courseField.getText().trim(),
+                            year = yearField.getText().trim(),
+                            roleText = roleField.getText().trim(),
+                            dept = (String) departmentBox.getSelectedItem();
+
+                    if (last.isEmpty() || first.isEmpty() || middle.isEmpty() || birth.isEmpty() ||
+                            course.isEmpty() || year.isEmpty() || roleText.isEmpty()) {
+                        JOptionPane.showMessageDialog(this, "All fields must be filled!");
+                        return;
+                    }
+
+                    LocalDate.parse(birth);
+
+                    int memberID = insertMemberToDB(last, first, middle, birth, contact, course, year, "Free");
+                    int roleID = insertRoleIfNotExist(roleText, dept);
+                    insertMemberRole(memberID, roleID);
+
+                    Staff s = new Staff(memberID, last, first, middle, birth, course, year, roleText, dept, "Free", contact);
+                    staffList.add(s);
+                    staffModel.addRow(new Object[]{s.getFullName(), s.birthdate, s.course, s.year, s.role, s.department, s.status});
+
+                    lastNameField.setText("");
+                    firstNameField.setText("");
+                    middleField.setText("");
+                    birthField.setText("");
+                    contactInfoField.setText("");
+                    courseField.setText("");
+                    yearField.setText("");
+                    roleField.setText("");
+
+                } catch (DateTimeParseException ex) {
+                    JOptionPane.showMessageDialog(this, "Invalid date format! Use YYYY-MM-DD.");
+                } catch (SQLException ex) {
+                    ex.printStackTrace();
+                    JOptionPane.showMessageDialog(this, "Error adding staff: " + ex.getMessage());
+                }
+            });
+
+            removeStaffBtn.addActionListener(e -> {
+                int row = staffTable.getSelectedRow();
+                if (row != -1) {
+                    int confirm = JOptionPane.showConfirmDialog(this, "Are you sure you want to remove this staff member?");
+                    if (confirm == JOptionPane.YES_OPTION) {
+                        Staff s = staffList.get(row);
+                        try {
+                            deleteMemberFromDB(s.memberID);
+                            staffList.remove(s);
+                            staffModel.removeRow(row);
+                        } catch (SQLException ex) {
+                            ex.printStackTrace();
+                            JOptionPane.showMessageDialog(this, "Error removing staff: " + ex.getMessage());
+                        }
+                    }
+                }
+            });
+
+            modifyStaffBtn.addActionListener(e -> {
+                int row = staffTable.getSelectedRow();
+                if (row != -1) {
+                    try {
+                        Staff s = staffList.get(row);
+                        String last = lastNameField.getText().trim(),
+                                first = firstNameField.getText().trim(),
+                                middle = middleField.getText().trim(),
+                                birth = birthField.getText().trim(),
+                                contact = contactInfoField.getText().trim(),
+                                course = courseField.getText().trim(),
+                                year = yearField.getText().trim(),
+                                roleText = roleField.getText().trim(),
+                                dept = (String) departmentBox.getSelectedItem();
+
+                        if (last.isEmpty() || first.isEmpty() || middle.isEmpty() || birth.isEmpty() ||
+                                course.isEmpty() || year.isEmpty() || roleText.isEmpty()) {
+                            JOptionPane.showMessageDialog(this, "All fields must be filled!");
+                            return;
+                        }
+
+                        LocalDate.parse(birth);
+
+                        int roleID = insertRoleIfNotExist(roleText, dept);
+
+                        try (Connection conn = Database.getConnection()) {
+                            String sql = "UPDATE Member SET Lname=?, Fname=?, Mname=?, Birthdate=?, ContactInfo=?, Course=?, YearLevel=? WHERE MemberID=?";
+                            PreparedStatement ps = conn.prepareStatement(sql);
+                            ps.setString(1, last);
+                            ps.setString(2, first);
+                            ps.setString(3, middle);
+                            ps.setString(4, birth);
+                            ps.setString(5, contact);
+                            ps.setString(6, course);
+                            ps.setInt(7, Integer.parseInt(year));
+                            ps.setInt(8, s.memberID);
+                            ps.executeUpdate();
+
+                            String sqlRole = "UPDATE MemberRole SET FKRoleID=? WHERE FKMemberID=?";
+                            PreparedStatement psRole = conn.prepareStatement(sqlRole);
+                            psRole.setInt(1, roleID);
+                            psRole.setInt(2, s.memberID);
+                            psRole.executeUpdate();
+                        }
+
+                        s.lastName = last;
+                        s.firstName = first;
+                        s.middleName = middle;
+                        s.birthdate = birth;
+                        s.contactInfo = contact;
+                        s.course = course;
+                        s.year = year;
+                        s.role = roleText;
+                        s.department = dept;
+
+                        staffModel.setValueAt(s.getFullName(), row, 0);
+                        staffModel.setValueAt(s.birthdate, row, 1);
+                        staffModel.setValueAt(s.course, row, 2);
+                        staffModel.setValueAt(s.year, row, 3);
+                        staffModel.setValueAt(s.role, row, 4);
+                        staffModel.setValueAt(s.department, row, 5);
+
+                        JOptionPane.showMessageDialog(this, "Staff member updated successfully!");
+
+                    } catch (DateTimeParseException ex) {
+                        JOptionPane.showMessageDialog(this, "Invalid date format! Use YYYY-MM-DD.");
+                    } catch (SQLException ex) {
+                        ex.printStackTrace();
+                        JOptionPane.showMessageDialog(this, "Error updating staff: " + ex.getMessage());
+                    }
+                }
+            });
+        }
+
+        // --- TASK PANEL ---
+        JPanel taskPanel = new JPanel(new BorderLayout());
+        taskPanel.setBorder(BorderFactory.createTitledBorder(BorderFactory.createLineBorder(new Color(255, 122, 0)), "TASKS"));
+        JTable taskTable = new JTable(taskModel);
+        addColumnSortingToTable(taskTable, taskList, taskModel, taskColumnAscending, false);
+        taskPanel.add(new JScrollPane(taskTable), BorderLayout.CENTER);
+
+        JPanel taskControls = new JPanel(new GridBagLayout());
+        taskControls.setBackground(Color.WHITE);
+        taskPanel.add(taskControls, BorderLayout.NORTH);
+
+        GridBagConstraints gbc = new GridBagConstraints();
+        gbc.insets = new Insets(5,5,5,5);
+        gbc.gridx = 0; gbc.gridy = 0; gbc.anchor = GridBagConstraints.EAST;
+        taskControls.add(new JLabel("Task Title:"), gbc);
+        gbc.gridx = 1; gbc.anchor = GridBagConstraints.WEST;
+        JTextField taskTitleField = new JTextField(15);
+        taskControls.add(taskTitleField, gbc);
+
+        gbc.gridx = 0; gbc.gridy = 1; gbc.anchor = GridBagConstraints.EAST;
+        taskControls.add(new JLabel("Deadline (YYYY-MM-DD):"), gbc);
+        gbc.gridx = 1; gbc.anchor = GridBagConstraints.WEST;
+        JTextField deadlineField = new JTextField(10);
+        taskControls.add(deadlineField, gbc);
+
+        gbc.gridx = 0; gbc.gridy = 2; gbc.anchor = GridBagConstraints.EAST;
+        taskControls.add(new JLabel("Priority:"), gbc);
+        gbc.gridx = 1; gbc.anchor = GridBagConstraints.WEST;
+        JComboBox<String> priorityBox = new JComboBox<>(new String[]{"Urgent", "Regular"});
+        taskControls.add(priorityBox, gbc);
+
+        gbc.gridx = 0; gbc.gridy = 3; gbc.anchor = GridBagConstraints.EAST;
+        taskControls.add(new JLabel("Assign To:"), gbc);
+        gbc.gridx = 1; gbc.anchor = GridBagConstraints.WEST;
+        JComboBox<String> assignToBox = new JComboBox<>();
+        for (Staff s : staffList) assignToBox.addItem(s.getFullName());
+        taskControls.add(assignToBox, gbc);
+
+        gbc.gridx = 0; gbc.gridy = 4; gbc.anchor = GridBagConstraints.EAST;
+        taskControls.add(new JLabel("Description:"), gbc);
+        gbc.gridx = 1; gbc.anchor = GridBagConstraints.WEST;
+        JTextField descField = new JTextField(15);
+        taskControls.add(descField, gbc);
+
+        gbc.gridx = 0; gbc.gridy = 5; gbc.anchor = GridBagConstraints.CENTER;
+        JButton assignTaskBtn = new JButton("Assign Task");
+        styleButton(assignTaskBtn);
+        JButton removeTaskBtn = new JButton("Remove Task");
+        styleButton(removeTaskBtn);
+
+        JPanel taskBtnPanel = new JPanel();
+        taskBtnPanel.add(assignTaskBtn);
+        taskBtnPanel.add(removeTaskBtn);
+
+        gbc.gridwidth = 2;
+        taskControls.add(taskBtnPanel, gbc);
+
+        // --- ASSIGN TASK ---
+        assignTaskBtn.addActionListener(e -> {
+            if (!currentUser.role.equals("Admin")) {
+                JOptionPane.showMessageDialog(this, "You do not have permission to assign tasks.");
+                return;
+            }
+            String title = taskTitleField.getText().trim();
+            String deadline = deadlineField.getText().trim();
+            String priority = (String) priorityBox.getSelectedItem();
+            String assignedToName = (String) assignToBox.getSelectedItem();
+            String description = descField.getText().trim();
+
+            if (title.isEmpty() || deadline.isEmpty() || assignedToName.isEmpty()) {
+                JOptionPane.showMessageDialog(this, "All fields must be filled!");
+                return;
+            }
+
+            try {
+                LocalDate.parse(deadline);
+
+                Staff assignedStaff = staffList.stream().filter(s -> s.getFullName().equals(assignedToName)).findFirst().orElse(null);
+                if (assignedStaff == null) return;
+
+                int taskID = insertTaskToDB(title, deadline, priority, description, currentUser.fullName);
+                insertTaskAssignment(taskID, assignedStaff.memberID, currentUser.fullName, "Ongoing");
+
+                Task t = new Task(taskID, title, deadline, assignedStaff.getFullName(), assignedStaff.memberID, "Ongoing", LocalDate.now().toString(),
+                        currentUser.fullName, 0, assignedStaff.department, priority, description);
+                taskList.add(t);
+                taskModel.addRow(new Object[]{t.title, t.deadline, t.assignedTo, t.status, t.assignedDate, t.assignedBy, t.department, t.priority, t.description, t.status});
+
+            } catch (DateTimeParseException ex) {
+                JOptionPane.showMessageDialog(this, "Invalid date format! Use YYYY-MM-DD.");
+            } catch (SQLException ex) {
+                ex.printStackTrace();
+                JOptionPane.showMessageDialog(this, "Error assigning task: " + ex.getMessage());
+            }
+        });
+
+        // --- REMOVE TASK ---
+        removeTaskBtn.addActionListener(e -> {
+            int row = taskTable.getSelectedRow();
+            if (row != -1) {
+                int confirm = JOptionPane.showConfirmDialog(this, "Are you sure you want to remove this task?");
+                if (confirm == JOptionPane.YES_OPTION) {
+                    Task t = taskList.get(row);
+                    try {
+                        try (Connection conn = Database.getConnection()) {
+                            PreparedStatement ps1 = conn.prepareStatement("DELETE FROM Task_Assignment WHERE FKTaskID=?");
+                            ps1.setInt(1, t.taskID);
+                            ps1.executeUpdate();
+
+                            PreparedStatement ps2 = conn.prepareStatement("DELETE FROM Task WHERE TaskID=?");
+                            ps2.setInt(1, t.taskID);
+                            ps2.executeUpdate();
+                        }
+                        taskList.remove(t);
+                        taskModel.removeRow(row);
+                    } catch (SQLException ex) {
+                        ex.printStackTrace();
+                        JOptionPane.showMessageDialog(this, "Error removing task: " + ex.getMessage());
+                    }
+                }
+            }
+        });
+
+        taskTable.addMouseListener(new MouseAdapter() {
+            public void mouseClicked(MouseEvent e) {
+                int row = taskTable.getSelectedRow();
+                if (row < 0) return;
+
+                Task t = taskList.get(row);
+                JDialog dialog = new JDialog(MainFrame.this, "Task Details", true);
+                dialog.setSize(400, 300);
+                dialog.setLayout(new GridBagLayout());
+                GridBagConstraints dgbc = new GridBagConstraints();
+                dgbc.insets = new Insets(5,5,5,5);
+                dgbc.gridx=0; dgbc.gridy=0; dgbc.anchor=GridBagConstraints.WEST;
+
+                dialog.add(new JLabel("Title: " + t.title), dgbc);
+                dgbc.gridy++;
+                dialog.add(new JLabel("Deadline: " + t.deadline), dgbc);
+                dgbc.gridy++;
+                dialog.add(new JLabel("Assigned To: " + t.assignedTo), dgbc);
+                dgbc.gridy++;
+                dialog.add(new JLabel("Priority: " + t.priority), dgbc);
+                dgbc.gridy++;
+                dialog.add(new JLabel("Description: " + t.description), dgbc);
+                dgbc.gridy++;
+                dialog.add(new JLabel("Assigned Completion: " + t.status), dgbc);
+                dgbc.gridy++;
+
+                JButton doneBtn = new JButton("Done");
+                JButton inProgressBtn = new JButton("In Progress");
+                styleButton(doneBtn);
+                styleButton(inProgressBtn);
+
+                doneBtn.addActionListener(ev -> updateTaskCompletion(t.taskID, "Done", row));
+                inProgressBtn.addActionListener(ev -> updateTaskCompletion(t.taskID, "In Progress", row));
+
+                JPanel btnPanel = new JPanel();
+                btnPanel.add(doneBtn);
+                btnPanel.add(inProgressBtn);
+
+                dgbc.gridwidth = 2;
+                dialog.add(btnPanel, dgbc);
+
+                dialog.setLocationRelativeTo(MainFrame.this);
+                dialog.setVisible(true);
+            }
+        });
+
+        mainPanel.add(staffPanel, "STAFF");
+        mainPanel.add(taskPanel, "TASK");
+        add(topPanel, BorderLayout.NORTH);
+        add(mainPanel, BorderLayout.CENTER);
+
+        CardLayout cl = (CardLayout) mainPanel.getLayout();
+        btnStaff.addActionListener(e -> cl.show(mainPanel, "STAFF"));
+        btnTask.addActionListener(e -> cl.show(mainPanel, "TASK"));
+        logoutBtn.addActionListener(e -> {
+            new LoginFrame();
+            dispose();
+        });
+
+        setVisible(true);
+    }
+
+    private void styleButton(JButton btn) {
+        btn.setBackground(new Color(255, 122, 0));
+        btn.setForeground(Color.WHITE);
+    }
+
+    private void addColumnSortingToTable(JTable table, List<?> dataList, DefaultTableModel model, boolean[] columnAscending, boolean isStaffTable) {
+        JTableHeader header = table.getTableHeader();
+        header.addMouseListener(new MouseAdapter() {
+            public void mouseClicked(MouseEvent e) {
+                int column = header.columnAtPoint(e.getPoint());
+                sortTableByColumn(column, dataList, model, columnAscending, isStaffTable);
+            }
+        });
+    }
+
+    private void sortTableByColumn(int column, List<?> dataList, DefaultTableModel model, boolean[] columnAscending, boolean isStaffTable) {
+        boolean ascending = columnAscending[column];
+        
+        if (isStaffTable) {
+            List<Staff> staffData = (List<Staff>) dataList;
+            switch (column) {
+                case 0: // Full Name
+                    staffData.sort(ascending ? Comparator.comparing(Staff::getFullName) : Comparator.comparing(Staff::getFullName).reversed());
+                    break;
+                case 1: // Birthday
+                    staffData.sort(ascending ? Comparator.comparing(s -> s.birthdate) : Comparator.comparing((Staff s) -> s.birthdate).reversed());
+                    break;
+                case 2: // Course
+                    staffData.sort(ascending ? Comparator.comparing(s -> s.course) : Comparator.comparing((Staff s) -> s.course).reversed());
+                    break;
+                case 3: // Year
+                    staffData.sort(ascending ? Comparator.comparing(s -> s.year) : Comparator.comparing((Staff s) -> s.year).reversed());
+                    break;
+                case 4: // Role
+                    staffData.sort(ascending ? Comparator.comparing(s -> s.role) : Comparator.comparing((Staff s) -> s.role).reversed());
+                    break;
+                case 5: // Department
+                    staffData.sort(ascending ? Comparator.comparing(s -> s.department) : Comparator.comparing((Staff s) -> s.department).reversed());
+                    break;
+                case 6: // Status
+                    staffData.sort(ascending ? Comparator.comparing(s -> s.status) : Comparator.comparing((Staff s) -> s.status).reversed());
+                    break;
+            }
+            
+            model.setRowCount(0);
+            for (Staff s : staffData) {
+                model.addRow(new Object[]{s.getFullName(), s.birthdate, s.course, s.year, s.role, s.department, s.status});
+            }
+        } else {
+            List<Task> taskData = (List<Task>) dataList;
+            switch (column) {
+                case 0: // Task
+                    taskData.sort(ascending ? Comparator.comparing(t -> t.title) : Comparator.comparing((Task t) -> t.title).reversed());
+                    break;
+                case 1: // Deadline
+                    taskData.sort(ascending ? Comparator.comparing(t -> t.deadline) : Comparator.comparing((Task t) -> t.deadline).reversed());
+                    break;
+                case 2: // Assigned To
+                    taskData.sort(ascending ? Comparator.comparing(t -> t.assignedTo) : Comparator.comparing((Task t) -> t.assignedTo).reversed());
+                    break;
+                case 3: // Status
+                    taskData.sort(ascending ? Comparator.comparing(t -> t.status) : Comparator.comparing((Task t) -> t.status).reversed());
+                    break;
+                case 4: // Assigned Date
+                    taskData.sort(ascending ? Comparator.comparing(t -> t.assignedDate) : Comparator.comparing((Task t) -> t.assignedDate).reversed());
+                    break;
+                case 5: // Assigned By
+                    taskData.sort(ascending ? Comparator.comparing(t -> t.assignedBy) : Comparator.comparing((Task t) -> t.assignedBy).reversed());
+                    break;
+                case 6: // Department
+                    taskData.sort(ascending ? Comparator.comparing(t -> t.department) : Comparator.comparing((Task t) -> t.department).reversed());
+                    break;
+                case 7: // Priority
+                    taskData.sort(ascending ? Comparator.comparing(t -> t.priority) : Comparator.comparing((Task t) -> t.priority).reversed());
+                    break;
+                case 8: // Description
+                    taskData.sort(ascending ? Comparator.comparing(t -> t.description) : Comparator.comparing((Task t) -> t.description).reversed());
+                    break;
+                case 9: // AssignedCompletion
+                    taskData.sort(ascending ? Comparator.comparing(t -> t.status) : Comparator.comparing((Task t) -> t.status).reversed());
+                    break;
+            }
+            
+            model.setRowCount(0);
+            for (Task t : taskData) {
+                model.addRow(new Object[]{t.title, t.deadline, t.assignedTo, t.status, t.assignedDate, t.assignedBy, t.department, t.priority, t.description, t.status});
+            }
+        }
+        
+        columnAscending[column] = !ascending;
+    }
+
+    // --- DATABASE OPERATIONS ---
+    private void initializeStaffFromDB() {
+        try (Connection conn = Database.getConnection()) {
+            String query = "SELECT m.MemberID, m.Lname, m.Fname, m.Mname, m.Birthdate, m.ContactInfo, m.Course, m.YearLevel, m.ActivityStatus, r.RoleName, d.DeptName " +
+                    "FROM Member m " +
+                    "LEFT JOIN MemberRole mr ON m.MemberID = mr.FKMemberID " +
+                    "LEFT JOIN Roles r ON mr.FKRoleID = r.RoleID " +
+                    "LEFT JOIN Department d ON r.FKDeptID = d.DeptID";
+            Statement stmt = conn.createStatement();
+            ResultSet rs = stmt.executeQuery(query);
+            while (rs.next()) {
+                Staff s = new Staff(
+                        rs.getInt("MemberID"),
+                        rs.getString("Lname"),
+                        rs.getString("Fname"),
+                        rs.getString("Mname"),
+                        rs.getString("Birthdate"),
+                        rs.getString("Course"),
+                        String.valueOf(rs.getInt("YearLevel")),
+                        rs.getString("RoleName") != null ? rs.getString("RoleName") : "",
+                        rs.getString("DeptName") != null ? rs.getString("DeptName") : "",
+                        rs.getString("ActivityStatus"),
+                        rs.getString("ContactInfo") != null ? rs.getString("ContactInfo") : ""
+                );
+                staffList.add(s);
+            }
+        } catch (SQLException ex) {
+            ex.printStackTrace();
+        }
+    }
+
+    private void initializeTasksFromDB() {
+        try (Connection conn = Database.getConnection()) {
+            String query = "SELECT t.TaskID, t.TaskTitle, t.Deadline, t.TaskPriority, t.Description, " +
+                    "ta.AssignedCompletion, ta.AssignedDate, m.Fname, m.Lname, mb.Fname as AssignedByF, mb.Lname as AssignedByL, d.DeptName " +
+                    "FROM Task t " +
+                    "LEFT JOIN Task_Assignment ta ON t.TaskID = ta.FKTaskID " +
+                    "LEFT JOIN Member m ON ta.FKMemberID = m.MemberID " +
+                    "LEFT JOIN Member mb ON ta.AssignedBy = mb.MemberID " +
+                    "LEFT JOIN MemberRole mr ON m.MemberID = mr.FKMemberID " +
+                    "LEFT JOIN Roles r ON mr.FKRoleID = r.RoleID " +
+                    "LEFT JOIN Department d ON r.FKDeptID = d.DeptID";
+            Statement stmt = conn.createStatement();
+            ResultSet rs = stmt.executeQuery(query);
+            while (rs.next()) {
+                String assignedTo = rs.getString("Fname") + " " + rs.getString("Lname");
+                String assignedBy = rs.getString("AssignedByF") + " " + rs.getString("AssignedByL");
+                Task t = new Task(rs.getInt("TaskID"), rs.getString("TaskTitle"), rs.getString("Deadline"), assignedTo, 0,
+                        rs.getString("AssignedCompletion"), rs.getString("AssignedDate"), assignedBy, 0,
+                        rs.getString("DeptName"), rs.getString("TaskPriority"), rs.getString("Description"));
+                taskList.add(t);
+            }
+        } catch (SQLException ex) {
+            ex.printStackTrace();
+        }
+    }
+
+    private int insertMemberToDB(String last, String first, String middle, String birth, String contact, String course, String year, String status) throws SQLException {
+        try (Connection conn = Database.getConnection()) {
+            String sql = "INSERT INTO Member (Lname, Fname, Mname, Birthdate, ContactInfo, Course, YearLevel, ActivityStatus) VALUES (?, ?, ?, ?, ?, ?, ?, ?)";
+            PreparedStatement ps = conn.prepareStatement(sql, Statement.RETURN_GENERATED_KEYS);
+            ps.setString(1, last);
+            ps.setString(2, first);
+            ps.setString(3, middle);
+            ps.setString(4, birth);
+            ps.setString(5, contact);
+            ps.setString(6, course);
+            ps.setInt(7, Integer.parseInt(year));
+            ps.setString(8, status);
+            ps.executeUpdate();
+            ResultSet rs = ps.getGeneratedKeys();
+            rs.next();
+            return rs.getInt(1);
+        }
+    }
+
+    private int insertRoleIfNotExist(String roleName, String deptName) throws SQLException {
+        try (Connection conn = Database.getConnection()) {
+            String queryDept = "SELECT DeptID FROM Department WHERE DeptName=?";
+            PreparedStatement psDept = conn.prepareStatement(queryDept);
+            psDept.setString(1, deptName);
+            ResultSet rsDept = psDept.executeQuery();
+            int deptID;
+            if (rsDept.next()) deptID = rsDept.getInt("DeptID");
+            else {
+                PreparedStatement psInsDept = conn.prepareStatement("INSERT INTO Department (DeptName) VALUES (?)", Statement.RETURN_GENERATED_KEYS);
+                psInsDept.setString(1, deptName);
+                psInsDept.executeUpdate();
+                ResultSet rsNewDept = psInsDept.getGeneratedKeys();
+                rsNewDept.next();
+                deptID = rsNewDept.getInt(1);
+            }
+
+            String queryRole = "SELECT RoleID FROM Roles WHERE RoleName=? AND FKDeptID=?";
+            PreparedStatement psRole = conn.prepareStatement(queryRole);
+            psRole.setString(1, roleName);
+            psRole.setInt(2, deptID);
+            ResultSet rsRole = psRole.executeQuery();
+            if (rsRole.next()) return rsRole.getInt("RoleID");
+            else {
+                PreparedStatement psInsRole = conn.prepareStatement("INSERT INTO Roles (FKDeptID, RoleName, RoleLevel) VALUES (?, ?, ?)", Statement.RETURN_GENERATED_KEYS);
+                psInsRole.setInt(1, deptID);
+                psInsRole.setString(2, roleName);
+                psInsRole.setString(3, "Standard");
+                psInsRole.executeUpdate();
+                ResultSet rsNewRole = psInsRole.getGeneratedKeys();
+                rsNewRole.next();
+                return rsNewRole.getInt(1);
+            }
+        }
+    }
+
+    private void insertMemberRole(int memberID, int roleID) throws SQLException {
+        try (Connection conn = Database.getConnection()) {
+            String sql = "INSERT INTO MemberRole (FKMemberID, FKRoleID) VALUES (?, ?)";
+            PreparedStatement ps = conn.prepareStatement(sql);
+            ps.setInt(1, memberID);
+            ps.setInt(2, roleID);
+            ps.executeUpdate();
+        }
+    }
+
+    private void deleteMemberFromDB(int memberID) throws SQLException {
+        try (Connection conn = Database.getConnection()) {
+            String sql = "DELETE FROM Member WHERE MemberID=?";
+            PreparedStatement ps = conn.prepareStatement(sql);
+            ps.setInt(1, memberID);
+            ps.executeUpdate();
+        }
+    }
+
+    private int insertTaskToDB(String title, String deadline, String priority, String description, String assignedBy) throws SQLException {
+        try (Connection conn = Database.getConnection()) {
+            String sql = "INSERT INTO Task (MemberManagerID, TaskTitle, Deadline, AssignmentStatus, TaskPriority, Description) VALUES (?,?,?,?,?,?)";
+            PreparedStatement ps = conn.prepareStatement(sql, Statement.RETURN_GENERATED_KEYS);
+            ps.setInt(1, 1);
+            ps.setString(2, title);
+            ps.setDate(3, Date.valueOf(deadline));
+            ps.setString(4, "Ongoing");
+            ps.setString(5, priority);
+            ps.setString(6, description);
+            ps.executeUpdate();
+            ResultSet rs = ps.getGeneratedKeys();
+            rs.next();
+            return rs.getInt(1);
+        }
+    }
+
+    private void insertTaskAssignment(int taskID, int memberID, String assignedBy, String status) throws SQLException {
+        try (Connection conn = Database.getConnection()) {
+            String sql = "INSERT INTO Task_Assignment (FKTaskID, FKMemberID, AssignedDate, AssignedBy, AssignedCompletion) VALUES (?,?,?,?,?)";
+            PreparedStatement ps = conn.prepareStatement(sql);
+            ps.setInt(1, taskID);
+            ps.setInt(2, memberID);
+            ps.setDate(3, Date.valueOf(LocalDate.now()));
+            ps.setInt(4, 1);
+            ps.setString(5, status);
+            ps.executeUpdate();
+        }
+    }
+
+    private void updateTaskCompletion(int taskID, String status, int rowIndex) {
+        try (Connection conn = Database.getConnection()) {
+            String sql = "UPDATE Task_Assignment SET AssignedCompletion=? WHERE FKTaskID=?";
+            PreparedStatement ps = conn.prepareStatement(sql);
+            ps.setString(1, status);
+            ps.setInt(2, taskID);
+            ps.executeUpdate();
+            taskModel.setValueAt(status, rowIndex, 9);
+        } catch (SQLException ex) {
+            ex.printStackTrace();
+            JOptionPane.showMessageDialog(this, "Error updating completion: " + ex.getMessage());
+        }
+    }
+}
